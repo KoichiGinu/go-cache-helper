@@ -45,7 +45,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/KoichiGinu/go-cache-helper/memorycache"
+	memorycache "github.com/KoichiGinu/go-cache-helper"
 )
 
 func main() {
@@ -74,7 +74,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/KoichiGinu/go-cache-helper/memorycache"
+	memorycache "github.com/KoichiGinu/go-cache-helper"
 )
 
 func main() {
