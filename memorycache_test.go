@@ -8,61 +8,83 @@ import (
 	"github.com/mattn/go-nulltype"
 )
 
+// ExampleStruct is used for testing the caching of structured data.
+type ExampleStruct struct {
+	ExampleInt    int
+	ExampleString string
+	ExampleTime   time.Time
+	ExampleStruct nulltype.NullInt64
+}
+
 func TestMemoryCacheProvider_Get(t *testing.T) {
-	type ExampleStruct struct {
-		ExampleInt    int
-		ExampleString string
-		ExampleTime   time.Time
-		ExampleStruct nulltype.NullInt64
-	}
+	// Subtest: Cache Hit
+	t.Run("Cache Hit", func(t *testing.T) {
+		key := "cache-key:example1"
+		value := ExampleStruct{
+			ExampleInt:    1,
+			ExampleString: "test",
+			ExampleTime:   time.Date(2022, 4, 1, 0, 0, 0, 0, time.Local),
+			ExampleStruct: nulltype.NullInt64Of(1),
+		}
+		ttl := 10 * time.Second
 
-	key := "cache-key:example1"
-	value := ExampleStruct{
-		ExampleInt:    1,
-		ExampleString: "test",
-		ExampleTime:   time.Date(2022, 4, 1, 0, 0, 0, 0, time.Local),
-		ExampleStruct: nulltype.NullInt64Of(1),
-	}
-	ttl := 10 * time.Second
+		// Create a new provider and store the value.
+		provider := NewMemoryCacheProvider[ExampleStruct](key)
+		provider.Set(value, ttl)
 
-	memoryCacheProvider := NewMemoryCacheProvider(key, ExampleStruct{})
-	memoryCacheProvider.Set(value, ttl)
+		// Retrieve the cached value.
+		cachedValue, err := provider.Get()
+		if err != nil {
+			t.Fatalf("Cache Hit: unexpected error: %v", err)
+		}
+		// Ensure the retrieved value matches the original.
+		if !reflect.DeepEqual(cachedValue, value) {
+			t.Errorf("Cache Hit: got %+v, want %+v", cachedValue, value)
+		}
+	})
 
-	cachedValue, err := memoryCacheProvider.Get()
-	if err != nil {
-		t.Errorf("case1: MemoryCacheProvider.Get() failed. err:%s", err.Error())
-	}
+	// Subtest: Cache Miss
+	t.Run("Cache Miss", func(t *testing.T) {
+		key := "cache-key:example2"
+		provider := NewMemoryCacheProvider[ExampleStruct](key)
+		// Attempt to retrieve a value that was never set.
+		_, err := provider.Get()
+		if err == nil {
+			t.Error("Cache Miss: expected error for missing cache data, got nil")
+		} else if err != ErrDataNotFound {
+			t.Errorf("Cache Miss: expected error %v, got %v", ErrDataNotFound, err)
+		}
+	})
 
-	if !reflect.DeepEqual(cachedValue, value) {
-		t.Errorf("case1: MemoryCacheProvider.Get() = %v, want %v", cachedValue, value)
-	}
+	// Subtest: Cache Expiration
+	t.Run("Cache Expiration", func(t *testing.T) {
+		key := "cache-key:example3"
+		value := ExampleStruct{
+			ExampleInt:    1,
+			ExampleString: "test",
+			ExampleTime:   time.Date(2022, 4, 1, 0, 0, 0, 0, time.Local),
+			ExampleStruct: nulltype.NullInt64Of(1),
+		}
+		ttl := 1 * time.Second
 
-	key2 := "cache-key:example2"
-	memoryCacheProvider2 := NewMemoryCacheProvider(key2, ExampleStruct{})
-	_, err = memoryCacheProvider2.Get()
-	if err == nil {
-		t.Errorf("case2: The error did not return even though there was no cache.")
-	} else if err != ErrMemoryCacheDataNotFound {
-		t.Errorf("case2: The invalid error returned.")
-	}
+		// Create a provider with a short TTL.
+		provider := NewMemoryCacheProvider[ExampleStruct](key)
+		provider.Set(value, ttl)
 
-	key3 := "cache-key:example3"
-	ttl3 := 1 * time.Second
+		// Immediately verify the value is cached.
+		if _, err := provider.Get(); err != nil {
+			t.Fatalf("Cache Expiration: unexpected error retrieving cache: %v", err)
+		}
 
-	memoryCacheProvider3 := NewMemoryCacheProvider(key3, ExampleStruct{})
-	memoryCacheProvider3.Set(value, ttl3)
+		// Wait for the cache entry to expire.
+		time.Sleep(2 * time.Second)
 
-	_, err = memoryCacheProvider3.Get()
-	if err != nil {
-		t.Errorf("case3: MemoryCacheProvider.Get() failed. err:%s", err.Error())
-	}
-
-	time.Sleep(2 * time.Second)
-
-	_, err = memoryCacheProvider3.Get()
-	if err == nil {
-		t.Errorf("case3: The error did not return even though the cache was expired.")
-	} else if err != ErrMemoryCacheDataNotFound {
-		t.Errorf("case3: The invalid error returned.")
-	}
+		// Attempt to retrieve the expired entry.
+		_, err := provider.Get()
+		if err == nil {
+			t.Error("Cache Expiration: expected error for expired cache data, got nil")
+		} else if err != ErrDataNotFound {
+			t.Errorf("Cache Expiration: expected error %v, got %v", ErrDataNotFound, err)
+		}
+	})
 }

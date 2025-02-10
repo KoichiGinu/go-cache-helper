@@ -7,61 +7,58 @@ import (
 	"github.com/patrickmn/go-cache"
 )
 
-const (
-	MemoryCacheDefaultExpiration      = 10 * time.Second
-	MemoryCacheDefaultCleanupInterval = 60 * time.Second
-)
+// DefaultExpiration is the default duration for cache item expiration.
+const DefaultExpiration = 10 * time.Second
+
+// DefaultCleanupInterval is the interval at which expired cache items are cleaned up.
+const DefaultCleanupInterval = 60 * time.Second
 
 var (
-	ErrMemoryCacheDataNotFound    = fmt.Errorf("the cache data was not found.")
-	ErrMemoryCacheAssertionFailed = fmt.Errorf("the cache data assertion is invalid.")
+	// ErrDataNotFound is returned when the requested cache entry does not exist.
+	ErrDataNotFound = fmt.Errorf("cache data not found")
+	// ErrAssertionFailed is returned when a cached value cannot be type-asserted to the expected type.
+	ErrAssertionFailed = fmt.Errorf("cache data type assertion failed")
 )
 
-var goCacheClient = cache.New(MemoryCacheDefaultExpiration, MemoryCacheDefaultCleanupInterval)
+// cacheClient is the underlying shared in-memory cache instance.
+var cacheClient = cache.New(DefaultExpiration, DefaultCleanupInterval)
 
+// MemoryCacheProvider provides a generic interface for caching values of type T.
 type MemoryCacheProvider[T any] struct {
-	CacheKey  string
-	ValueType T
+	cacheKey string
 }
 
-type MemoryCacheProviderInterface[T any] interface {
-	Get() (T, error)
-	Set(value T, ttl time.Duration)
-	SetDefault(value T)
-	Clear()
+// NewMemoryCacheProvider creates a new MemoryCacheProvider with the specified cache key.
+func NewMemoryCacheProvider[T any](cacheKey string) *MemoryCacheProvider[T] {
+	return &MemoryCacheProvider[T]{cacheKey: cacheKey}
 }
 
-var _ MemoryCacheProviderInterface[any] = (*MemoryCacheProvider[any])(nil)
-
-func NewMemoryCacheProvider[T any](cacheKey string, valueType T) *MemoryCacheProvider[T] {
-	return &MemoryCacheProvider[T]{
-		CacheKey:  cacheKey,
-		ValueType: valueType,
-	}
-}
-
-func (s MemoryCacheProvider[T]) Get() (T, error) {
+// Get retrieves the cached value associated with the provider's cache key.
+// If the cache entry is missing or if the type assertion fails, an error is returned.
+func (m *MemoryCacheProvider[T]) Get() (T, error) {
 	var result T
-	rawResult, found := goCacheClient.Get(s.CacheKey)
+	raw, found := cacheClient.Get(m.cacheKey)
 	if !found {
-		return result, ErrMemoryCacheDataNotFound
+		return result, ErrDataNotFound
 	}
-	result, ok := rawResult.(T)
+	result, ok := raw.(T)
 	if !ok {
-		return result, ErrMemoryCacheAssertionFailed
+		return result, ErrAssertionFailed
 	}
-
 	return result, nil
 }
 
-func (s MemoryCacheProvider[T]) Set(value T, ttl time.Duration) {
-	goCacheClient.Set(s.CacheKey, value, ttl)
+// Set caches the given value with a custom time-to-live (TTL).
+func (m *MemoryCacheProvider[T]) Set(value T, ttl time.Duration) {
+	cacheClient.Set(m.cacheKey, value, ttl)
 }
 
-func (s MemoryCacheProvider[T]) SetDefault(value T) {
-	goCacheClient.SetDefault(s.CacheKey, value)
+// SetDefault caches the given value using the default expiration time.
+func (m *MemoryCacheProvider[T]) SetDefault(value T) {
+	cacheClient.SetDefault(m.cacheKey, value)
 }
 
-func (s MemoryCacheProvider[T]) Clear() {
-	goCacheClient.Delete(s.CacheKey)
+// Clear removes the cached entry associated with the provider's cache key.
+func (m *MemoryCacheProvider[T]) Clear() {
+	cacheClient.Delete(m.cacheKey)
 }
